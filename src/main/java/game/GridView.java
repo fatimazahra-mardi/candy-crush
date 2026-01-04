@@ -2,12 +2,17 @@ package game;
 import javafx.scene.media.AudioClip;
 import java.net.URL;
 import javafx.animation.FadeTransition;
+import javafx.animation.KeyFrame;
+import javafx.animation.ParallelTransition;
 import javafx.animation.PauseTransition;
 import javafx.animation.ScaleTransition;
+import javafx.animation.Timeline;
+import javafx.animation.TranslateTransition;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane;
@@ -43,12 +48,27 @@ public class GridView {
     private static int moves = 20;      // nombre de coups autorisés
     private static Label movesLabel;    // affichage des coups restants
     // ================== TARGET ==================
-    private static final int TARGET_SCORE = 6000;
+    
+
+
+        // level
+    private static int level = 1;
+    private static int BASE_TARGET = 1000;
+    // private static int TARGET_SCORE = baseTarget;
+    private static int TARGET_SCORE = BASE_TARGET;
+
+
     private static Label targetLabel;
 
     //=======================
     
+    private static StackPane gameOverOverlay; // référence globale
     private static StackPane rootStack;
+
+// ================= TIME ============
+private static int timeLeft = 70; // en secondes
+private static Label timeLabel;
+private static Timeline timer;
 
 
 
@@ -70,9 +90,19 @@ public class GridView {
 
 
     // ================== SOUND ==================
-private static final AudioClip SOUND_SWAP  = loadSound("/sound/swap.wav");
-private static final AudioClip SOUND_MATCH = loadSound("/sound/match.wav");
-private static final AudioClip SOUND_GAME_OVER = loadSound("/sound/game_over.wav");
+// ================== SOUND ==================
+private static final AudioClip SOUND_SWAP =
+        new AudioClip(GridView.class.getResource("/sound/swap.wav").toExternalForm());
+
+private static final AudioClip SOUND_MATCH =
+        new AudioClip(GridView.class.getResource("/sound/match.wav").toExternalForm());
+
+private static final AudioClip SOUND_WIN =
+        new AudioClip(GridView.class.getResource("/sound/win.mp3").toExternalForm());
+
+private static final AudioClip SOUND_FAIL =
+        new AudioClip(GridView.class.getResource("/sound/faild.mp3").toExternalForm());
+
 
 private static AudioClip loadSound(String path) {
     URL url = GridView.class.getResource(path);
@@ -141,6 +171,8 @@ private static void play(AudioClip clip) {
     if (firstSelected == null) {
         firstSelected = cell;
         selectCell(cell);
+        play(SOUND_SWAP);
+
         return;
     }
 
@@ -151,8 +183,9 @@ private static void play(AudioClip clip) {
     }
 
     // 1️⃣ Swap logique uniquement
-    swap(firstSelected, cell);
-    play(SOUND_SWAP);
+//    play(SOUND_FAIL);   // son swap invalide
+swap(firstSelected, cell);
+
 
     // 2️⃣ Vérifier s’il y a un match
     boolean[][] matches = CandyLogic.detectMatches(board);
@@ -179,7 +212,8 @@ private static void play(AudioClip clip) {
 
     } else {
         // ❌ Coup invalide → annuler immédiatement
-         play(SOUND_GAME_OVER);
+         play(SOUND_FAIL);
+
         swap(firstSelected, cell);
         comboMultiplier = 1;
         refreshView();
@@ -189,6 +223,12 @@ private static void play(AudioClip clip) {
     unselectCell(firstSelected);
     firstSelected = null;
     checkEndGame();
+    checkNoMovesGameOver();
+    if (!hasAnyPossibleMove() && !gameOver) {
+    gameOver = true;
+    showEndPopup(false);
+}
+
 
 }
 
@@ -208,6 +248,8 @@ private static void play(AudioClip clip) {
 
     // ================== RESOLUTION ==================
     private static void resolveWithAnimation() {
+        System.out.println("CHECK SCORE = " + score + " TARGET = " + TARGET_SCORE);
+
 
         boolean[][] matches = CandyLogic.detectMatches(board);
         boolean found = false;
@@ -225,11 +267,12 @@ private static void play(AudioClip clip) {
         }
 
 
-        if (!found) return;
-        play(SOUND_MATCH);
+        // if (!found) return;
+        // play(SOUND_MATCH);
 
         if (!found) {
             comboMultiplier = 1; // plus de match → fin de cascade → reset combo
+             checkEndGame();
             return;
         }
 
@@ -251,8 +294,22 @@ private static void play(AudioClip clip) {
             resolveWithAnimation(); // cascade
         });
         wait.play();
+
+ if (score >= TARGET_SCORE) {
+    checkEndGame();
+    return;
+}
+
+if (!CandyLogic.hasPossibleMove(board)) {
+    gameOver = true;
+    showEndPopup(false);
+}
+
+
     }
 
+
+    
     private static void animateRemove(int r, int c) {
 
         ImageView iv = (ImageView) gridCells[r][c].getChildren().get(0);
@@ -309,6 +366,7 @@ private static void play(AudioClip clip) {
         st.setAutoReverse(true);
         st.setCycleCount(2);
         st.play();
+        
     }
 
     public static VBox createScorePanel() {
@@ -322,6 +380,16 @@ private static void play(AudioClip clip) {
         movesLabel = new Label();
         movesLabel.setFont(Font.font("Arial", 18));
         updateMovesLabel();
+// TIME GAME OVER 
+
+      timeLabel = new Label();
+        timeLabel.setFont(Font.font("Arial", 18));
+        updateTimeLabel();
+
+        VBox timeBox = createInfoBox("Time", timeLabel);
+        // box.getChildren().add(timeBox);
+        
+
 
         targetLabel = new Label();
         targetLabel.setFont(Font.font("Arial", 18));
@@ -333,7 +401,7 @@ private static void play(AudioClip clip) {
         VBox movesBox  = createInfoBox("Moves", movesLabel);
 
         VBox box = new VBox(20);
-        box.getChildren().addAll(title, targetBox, scoreBox, movesBox);
+        box.getChildren().addAll(title, targetBox, scoreBox, movesBox, timeBox);
         box.setAlignment(Pos.CENTER);
 
         VBox wrapper = new VBox();
@@ -359,6 +427,12 @@ private static void play(AudioClip clip) {
         return wrapper;
         
     }
+
+    private static void updateTimeLabel() {
+    timeLabel.setText(timeLeft + "s");
+}
+
+
 
     private static VBox createInfoBox(String titleText, Label valueLabel) {
 
@@ -446,123 +520,471 @@ private static int generateSafeCandy(int r, int c) {
     }
 
 
-    private static void checkEndGame() {
-    if (gameOver) return;
+private static void checkEndGame() {
+    if (gameOverOverlay != null) return;
 
     if (score >= TARGET_SCORE) {
-        gameOver = true;
         showEndPopup(true);
+        return;
     }
-    else if (moves <= 0) {
-        gameOver = true;
+
+    if (moves <= 0 || timeLeft <= 0 || !CandyLogic.hasPossibleMove(board)) {
         showEndPopup(false);
     }
+}
 
+
+// private static void showGameOverBar() {
+
+//     Label bar = new Label("GAME OVER");
+//     bar.setPrefHeight(70);
+//     bar.setMaxWidth(Double.MAX_VALUE);
+//     bar.setAlignment(Pos.CENTER);
+
+//     bar.setStyle("""
+//         -fx-background-color: linear-gradient(#ff4f9a, #e91e63);
+//         -fx-text-fill: white;
+//         -fx-font-size: 28;
+//         -fx-font-weight: bold;
+//     """);
+
+//     StackPane.setAlignment(bar, Pos.TOP_CENTER);
+//     bar.setTranslateY(-100);
+//     rootStack.getChildren().add(bar);
+
+//     TranslateTransition slide = new TranslateTransition(Duration.millis(450), bar);
+//     slide.setToY(0);
+//     slide.play();
+// }
+private static void showEndPopup(boolean win) {
+
+    if (gameOverOverlay != null) return;
+
+    // WIN FINAL AU LEVEL 4 → POPUP FINAL DIRECT
+    if (win && level == 4) {
+        showFinalWinPopup();
+        return;
     }
 
-    private static void showEndPopup(boolean win) {
+    gameOver = true;
+   
+
+    if (timer != null) timer.stop();
+
+    play(win ? SOUND_WIN : SOUND_FAIL);
+
+    // OVERLAY SOMBRE
+    gameOverOverlay = new StackPane();
+    gameOverOverlay.setStyle("-fx-background-color: rgba(0,0,0,0.55);");
+
+    // CARTE CENTRALE (STYLE CANDY CRUSH)
+    VBox card = new VBox(18);
+    card.setAlignment(Pos.CENTER);
+    card.setPadding(new Insets(30));
+    card.setPrefWidth(520);     // largeur > hauteur
+    card.setMaxHeight(260);
+
+    card.setStyle("""
+        -fx-background-color: linear-gradient(#ffe6f0, #ffd1e8);
+        -fx-background-radius: 30;
+        -fx-border-color: #ff4f9a;
+        -fx-border-width: 4;
+        -fx-border-radius: 30;
+    """);
+
+    // TITRE
+    Label title = new Label(
+        win ? "🎉 SWEET VICTORY 🎉" : "😢 TRY AGAIN"
+    );
+    title.setFont(Font.font("Arial", FontWeight.BOLD, 28));
+    title.setTextFill(Color.web("#c2185b"));
+
+    // SOUS-TITRE
+    Label subtitle = new Label(
+        win ? "Level " + level + " completed" : ""
+    );
+    subtitle.setFont(Font.font(18));
+    subtitle.setTextFill(Color.web("#6a1b9a"));
+
+    // BOUTON
+    Button action = new Button(win ? "Next Level" : "Retry");
+    action.setStyle("""
+        -fx-background-color: #ff4f9a;
+        -fx-text-fill: white;
+        -fx-font-size: 16;
+        -fx-padding: 10 40;
+        -fx-background-radius: 25;
+    """);
+
+    action.setOnAction(e -> {
+        rootStack.getChildren().remove(gameOverOverlay);
+        gameOverOverlay = null;
+
+        if (win) {
+            nextLevel();
+        } else {
+            resetGame();
+        }
+    });
+
+    card.getChildren().addAll(title, subtitle, action);
+    gameOverOverlay.getChildren().add(card);
+    rootStack.getChildren().add(gameOverOverlay);
+
+    // ANIMATION CANDY CRUSH (SCALE + FADE)
+    ScaleTransition scale = new ScaleTransition(Duration.millis(400), card);
+    scale.setFromX(0.7);
+    scale.setFromY(0.7);
+    scale.setToX(1);
+    scale.setToY(1);
+
+    FadeTransition fade = new FadeTransition(Duration.millis(400), card);
+    fade.setFromValue(0);
+    fade.setToValue(1);
+
+    new ParallelTransition(scale, fade).play();
+}
+
+
+
+    // private static void resetGame() {
+    // score = 0;
+    // moves = 20;
+    // comboMultiplier = 1;
+    // gameOver = false;
+    // timeLeft = 60;
+    // updateTimeLabel();
+    // startTimer(60);
+
+    // updateScoreLabel();
+    // updateMovesLabel();
+
+    // refillBoard();
+    // refreshView();
+    // }
+  private static void resetGame() {
+    if (gameOverOverlay != null) {
+    rootStack.getChildren().remove(gameOverOverlay);
+    gameOverOverlay = null;
+}
+
+    score = 0;
+    moves = 20;
+    comboMultiplier = 1;
+    gameOver = false;
+
+    timeLeft = 60;
+    startTimer(60);
+
+    // recréer la matrice complètement
+    board = new int[ROWS][COLS];
+    gridCells = new StackPane[ROWS][COLS];
+
+    GridPane newGrid = createGrid(ROWS, COLS, CELL_SIZE);
+
+    BorderPane root = (BorderPane) rootStack.getChildren().get(0);
+    root.setRight(newGrid);
+
+    updateTargetLabel();
+    updateScoreLabel();
+    updateMovesLabel();
+}
+
+
+public static void startTimer(int seconds) {
+    timeLeft = seconds;
+    updateTimeLabel();
+
+    if (timer != null) {
+        timer.stop();
+    }
+
+    timer = new Timeline(
+        new KeyFrame(Duration.seconds(1), e -> {
+            if (gameOver) {
+                timer.stop();
+                return;
+            }
+
+            timeLeft--;
+            updateTimeLabel();
+// play(SOUND_FAIL);
+           if (timeLeft <= 0) {
+    timer.stop();
+    gameOver = true;
+
+    boolean win = score >= TARGET_SCORE;
+
+    if (win) {
+        play(SOUND_WIN);
+    } else {
+        play(SOUND_FAIL);
+        resetGame();
+        // play(SOUND_FAIL);
+    }
+
+    showEndPopup(win);
+    if (timeLeft <= 0) {
+    timer.stop();
+    showEndPopup(score >= TARGET_SCORE);
+}
+
+}
+
+        })
+    );
+
+    timer.setCycleCount(Timeline.INDEFINITE);
+    timer.play();
+}
+
+
+    public static void setRootStack(StackPane root) {
+    rootStack = root;
+
+}
+
+public static void updateTimeLabelPublic() {
+    updateTimeLabel();
+}
+
+public static void decrementTime() {
+    if (gameOver) return;
+    timeLeft--;
+    updateTimeLabel();
+}
+public static boolean isGameOver() {
+    return gameOver;
+}
+
+public static void forceGameOver(boolean win) {
+    if (gameOver) return;
+
+    gameOver = true;
+
+    if (timer != null) timer.stop();
+
+    if (win) {
+        play(SOUND_WIN);
+    } else {
+        play(SOUND_FAIL);
+    }
+
+    showEndPopup(win);
+}
+
+
+
+public static int getTimeLeft() {
+    return timeLeft;
+}
+private static boolean hasAnyPossibleMove() {
+    for (int r = 0; r < ROWS; r++) {
+        for (int c = 0; c < COLS; c++) {
+
+            if (c + 1 < COLS) {
+                swapTemp(r, c, r, c + 1);
+                if (hasMatch()) { swapTemp(r, c, r, c + 1); return true; }
+                swapTemp(r, c, r, c + 1);
+            }
+
+            if (r + 1 < ROWS) {
+                swapTemp(r, c, r + 1, c);
+                if (hasMatch()) { swapTemp(r, c, r + 1, c); return true; }
+                swapTemp(r, c, r + 1, c);
+            }
+        }
+    }
+    return false;
+}
+
+private static boolean hasMatch() {
+    boolean[][] m = CandyLogic.detectMatches(board);
+    for (int r = 0; r < ROWS; r++)
+        for (int c = 0; c < COLS; c++)
+            if (m[r][c]) return true;
+    return false;
+}
+
+private static void swapTemp(int r1, int c1, int r2, int c2) {
+    int t = board[r1][c1];
+    board[r1][c1] = board[r2][c2];
+    board[r2][c2] = t;
+}
+private static void checkNoMovesGameOver() {
+    if (gameOver) return;
+
+   if (score >= TARGET_SCORE) {
+    checkEndGame();
+    return;
+}
+
+if (!CandyLogic.hasPossibleMove(board)) {
+    gameOver = true;
+    showEndPopup(false);
+}
+
+}
+
+
+// level
+private static void nextLevel() {
+
+   // STOP au level 4
+   if (level >= 4) {
+    showEndPopup(true); // WIN FINAL
+    return;
+}
+    
+    level++;
+
+    TARGET_SCORE = BASE_TARGET * level;
+    COLS++;
+
+    score = 0;
+    moves = 20;
+    comboMultiplier = 1;
+    gameOver = false;
+
+    timeLeft = 60;
+    startTimer(60);
+
+    board = new int[ROWS][COLS];
+    gridCells = new StackPane[ROWS][COLS];
+
+    GridPane newGrid = createGrid(ROWS, COLS, CELL_SIZE);
+
+    BorderPane root = (BorderPane) rootStack.getChildren().get(0);
+    root.setRight(newGrid);
+
+    updateTargetLabel();
+    updateScoreLabel();
+    updateMovesLabel();
+}
+
+
+
+// private static void rebuildGridUI() {
+//     GridPane grid = (GridPane) rootStack.lookup(".grid-pane");
+//     grid.getChildren().clear();
+//     drawGrid(board);
+// }
+
+// designe de game over  win level 4 
+private static void showFinalWinPopup() {
+
+    gameOver = true;
+
+    if (timer != null) timer.stop();
+      play(SOUND_WIN);
 
     StackPane overlay = new StackPane();
     overlay.setStyle("-fx-background-color: rgba(0,0,0,0.6);");
 
-    VBox popup = new VBox(20);
-    popup.setAlignment(Pos.CENTER);
-    popup.setPadding(new Insets(30));
-    // 🔹 largeur et hauteur contrôlées
-    popup.setMaxWidth(360);
-    popup.setPrefHeight(420);      // 👈 hauteur fixe (clé !)
-    popup.setMaxHeight(420);
-    popup.setMinHeight(380);
-    StackPane.setMargin(popup, new Insets(60, 0, 60, 0));
+    VBox card = new VBox(20);
+    card.setAlignment(Pos.CENTER);
+    card.setPadding(new Insets(30));
+    card.setPrefWidth(360);
+    card.setMaxHeight(280);
 
-
-    popup.setStyle("""
-        -fx-background-color: #ffd6e7;
-        -fx-background-radius: 25;
-        -fx-border-color: #c2185b;
+    card.setStyle("""
+        -fx-background-color: #ffe6f0;
+        -fx-background-radius: 30;
+        -fx-border-color: #ff4f9a;
         -fx-border-width: 4;
-        -fx-border-radius: 25;
+        -fx-border-radius: 30;
     """);
 
-    Label title = new Label(win ? " 🎉 You Win!" : " 😢 You Failed!");
-    title.setFont(Font.font("Arial", FontWeight.BOLD, 26));
-    title.setTextFill(Color.web("#b0003a"));
+    Label title = new Label("🏆 CONGRATULATIONS 🏆");
+    title.setFont(Font.font("Arial", FontWeight.BOLD, 24));
+    title.setTextFill(Color.web("#c2185b"));
 
-    Label scoreTitle = new Label("Final Score");
-    scoreTitle.setFont(Font.font("Arial", FontWeight.SEMI_BOLD, 16));
-    scoreTitle.setTextFill(Color.web("#7a1c3d"));
+    Label subtitle = new Label("You completed all levels!");
+    subtitle.setFont(Font.font(18));
 
-    Label movesLeftLabel = null;
-    if (moves > 0) {
-        movesLeftLabel = new Label("You crushed it 💥 with " + moves + " moves left!");
-        movesLeftLabel.setFont(
-            Font.font("Arial", FontWeight.SEMI_BOLD, 17)
-        );
+    Button restart = new Button("Play Again");
+    restart.setStyle("""
+        -fx-background-color: #ff4f9a;
+        -fx-text-fill: white;
+        -fx-font-size: 16;
+        -fx-padding: 10 35;
+        -fx-background-radius: 20;
+    """);
 
-        movesLeftLabel.setTextFill(
-            Color.web("#c2185b") // rose Candy Crush
-        );
+    restart.setOnAction(e -> {
+        level = 1;
+        TARGET_SCORE = BASE_TARGET;
+        COLS = 8; // valeur initiale
+        resetGame();
+        rootStack.getChildren().remove(overlay);
+    });
 
-    }
+    card.getChildren().addAll(title, subtitle, restart);
+    overlay.getChildren().add(card);
+    rootStack.getChildren().add(overlay);
+}
 
-    Label scoreValue = new Label(String.valueOf(score));
-    scoreValue.setFont(Font.font("Arial", FontWeight.EXTRA_BOLD, 36));
-    scoreValue.setTextFill(Color.web("#c2185b"));
+// si il faild level 4 
+private static void showFailedPopup() {
+    gameOver = true;
+
+    if (timer != null) timer.stop();
+
+    StackPane overlay = new StackPane();
+    overlay.setStyle("-fx-background-color: rgba(0,0,0,0.6);");
+
+    VBox card = new VBox(20);
+    card.setAlignment(Pos.CENTER);
+    card.setPadding(new Insets(30));
+    card.setPrefWidth(340);
+
+    card.setStyle("""
+        -fx-background-color: #ffe6f0;
+        -fx-background-radius: 30;
+        -fx-border-color: #ff4f9a;
+        -fx-border-width: 4;
+        -fx-border-radius: 30;
+    """);
+
+    Label title = new Label("You Failed");
+    title.setFont(Font.font("Arial", FontWeight.BOLD, 22));
+    title.setTextFill(Color.web("#c2185b"));
+
+    Label subtitle = new Label("Try again this level");
 
     Button retry = new Button("Retry");
     retry.setStyle("""
         -fx-background-color: #ff4f9a;
         -fx-text-fill: white;
         -fx-font-size: 16;
-        -fx-padding: 10 30;
+        -fx-padding: 10 35;
         -fx-background-radius: 20;
     """);
-    retry.setCursor(Cursor.HAND);
 
     retry.setOnAction(e -> {
-        resetGame();
-        ((Pane) overlay.getParent()).getChildren().remove(overlay);
+        resetGame();              // recommence le même level
+        rootStack.getChildren().remove(overlay);
     });
 
-    popup.getChildren().add(title);
-    popup.getChildren().add(scoreTitle);
-    popup.getChildren().add(scoreValue);
-
-    if (movesLeftLabel != null) {
-        popup.getChildren().add(movesLeftLabel);
-    }
-
-    popup.getChildren().add(retry);
-
-    overlay.getChildren().add(popup);
-
+    card.getChildren().addAll(title, subtitle, retry);
+    overlay.getChildren().add(card);
     rootStack.getChildren().add(overlay);
-    
+}
+
+
+private static void rebuildGridUI() {
+    // Nettoyer l'affichage
+    for (int r = 0; r < ROWS; r++) {
+        for (int c = 0; c < COLS; c++) {
+            if (gridCells[r][c] != null) {
+                gridCells[r][c].getChildren().clear();
+            }
+        }
     }
 
-    private static void resetGame() {
-    score = 0;
-    moves = 20;
-    comboMultiplier = 1;
-    gameOver = false;
-
-    updateScoreLabel();
-    updateMovesLabel();
-
-    refillBoard();
+    // Redessiner avec le nouveau board
     refreshView();
-    }
-
-
-
-    public static void setRootStack(StackPane root) {
-    rootStack = root;
-
-    }
-
-
-
-
+}
 
 }
 

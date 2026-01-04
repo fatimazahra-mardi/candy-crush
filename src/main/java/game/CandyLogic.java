@@ -40,4 +40,52 @@ public class CandyLogic {
 
         return matches;
     }
+public static boolean hasPossibleMove(int[][] board) {
+    int rows = board.length;
+    int cols = board[0].length;
+
+    for (int r = 0; r < rows; r++) {
+        for (int c = 0; c < cols; c++) {
+
+            if (c + 1 < cols) {
+                swap(board, r, c, r, c + 1);
+                if (hasMatch(board)) {
+                    swap(board, r, c, r, c + 1);
+                    return true;
+                }
+                swap(board, r, c, r, c + 1);
+            }
+
+            if (r + 1 < rows) {
+                swap(board, r, c, r + 1, c);
+                if (hasMatch(board)) {
+                    swap(board, r, c, r + 1, c);
+                    return true;
+                }
+                swap(board, r, c, r + 1, c);
+            }
+        }
+    }
+    return false;
+}
+
+private static boolean hasMatch(int[][] board) {
+    boolean[][] m = detectMatches(board);
+    for (boolean[] row : m)
+        for (boolean b : row)
+            if (b) return true;
+    return false;
+}
+
+private static void swap(int[][] b, int r1, int c1, int r2, int c2) {
+    int t = b[r1][c1];
+    b[r1][c1] = b[r2][c2];
+    b[r2][c2] = t;
+}
+
+
+
+
+
+
 }

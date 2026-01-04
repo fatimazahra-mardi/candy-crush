@@ -216,7 +216,8 @@ public class CandyCrushApp extends Application {
 
         playButton.setOnAction(e -> {
         rootStack.getChildren().remove(loadingOverlay); //  retire le loading
-        root.setVisible(true);                           // affiche le jeu
+        root.setVisible(true);    
+         GridView.startTimer(60);                       // affiche le jeu
         });
 
 
@@ -225,8 +226,28 @@ public class CandyCrushApp extends Application {
 
         stage.setTitle("Candy Crush");
         stage.setScene(scene);
+        stage.setResizable(false);
+        stage.setWidth(1500);
+        stage.setHeight(900);
+
         stage.show();
+        Timeline timer = new Timeline(
+    new KeyFrame(Duration.seconds(1), e -> {
+        if (!GridView.isGameOver()) {
+            GridView.decrementTime();
+            if (GridView.getTimeLeft() <= 0) {
+                GridView.forceGameOver(false);
+            }
+        }
+    })
+);
+timer.setCycleCount(Timeline.INDEFINITE);
+timer.play();
+
+        
     }
+
+    
 
     public static void main(String[] args) {
         launch(args);
